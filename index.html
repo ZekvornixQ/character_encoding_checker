@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>文字コードチェッカー</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jschardet/3.0.0/jschardet.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js"></script>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 40px; background: #f0f2f5; color: #333; }
+        .card { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.5rem; margin-bottom: 20px; color: #1a1a1a; text-align: center; }
+        
+        /* ドロップエリア */
+        #drop-zone {
+            width: 100%; height: 150px; border: 2px dashed #007bff; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            color: #007bff; cursor: pointer; background: #f8fbff; transition: 0.2s;
+            box-sizing: border-box; text-align: center; font-weight: bold;
+        }
+        #drop-zone.hover { background: #007bff; color: white; }
+
+        /* 変換セクション */
+        #convert-box { display: none; margin-top: 20px; text-align: left; background: #fafafa; padding: 20px; border-radius: 8px; border: 1px solid #eee; }
+        
+        /* ファイルリストのスタイル */
+        .file-list { margin-bottom: 20px; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ddd; border-radius: 6px; padding: 10px; }
+        .file-item { display: flex; justify-content: space-between; padding: 8px 5px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; }
+        .file-item:last-child { border-bottom: none; }
+        .file-name { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 350px; }
+        .file-enc { color: #666; background: #e9ecef; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; }
+
+        select, .btn { width: 100%; padding: 12px; margin-top: 10px; font-size: 1rem; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box; }
+        
+        .btn-save { background: #28a745; color: white; border: none; cursor: pointer; font-weight: bold; margin-bottom: 12px; transition: 0.2s; }
+        .btn-save:hover { background: #218838; }
+        
+        .btn-clear { background: #ffffff; color: #dc3545; border: 1px solid #dc3545; cursor: pointer; transition: 0.2s; text-align: center; }
+        .btn-clear:hover { background: #fff5f5; }
+
+        hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>文字コードチェッカー (複数対応)</h1>
+    
+    <div id="drop-zone">複数のCSVファイルをドロップ、またはクリック</div>
+
+    <div id="convert-box">
+        <label style="font-size: 0.9rem; font-weight: bold; color: #555;">読み込まれたファイル一覧:</label>
+        <div class="file-list" id="file-list-container">
+            </div>
+
+        <hr>
+        <label style="font-size: 0.9rem; font-weight: bold;">一括変換後の文字コードを選択:</label>
+        <select id="target-enc">
+            <option value="UTF8">UTF-8 (標準・Mac/Web用)</option>
+            <option value="SJIS">Shift_JIS (Windows/Excel用)</option>
+        </select>
+        
+        <button class="btn btn-save" onclick="saveAllFiles()">すべて変換して保存</button>
+        <button class="btn btn-clear" onclick="initApp()">クリアして初期化</button>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const convertBox = document.getElementById('convert-box');
+    const fileListContainer = document.getElementById('file-list-container');
+    
+    // 複数のファイルを配列で管理する
+    let filesArray = [];
+
+    // 1. 初期化関数
+    function initApp() {
+        filesArray = [];
+        fileListContainer.innerHTML = "";
+        document.getElementById('target-enc').selectedIndex = 0;
+        
+        convertBox.style.display = 'none';
+        console.log("アプリを初期化しました");
+    }
+
+    // 2. ファイル群の読み込み処理
+    async function loadFiles(files) {
+        if (!files || files.length === 0) return;
+
+        for (let file of files) {
+            // CSVファイル以外はスキップ（念のため）
+            if (!file.name.endsWith('.csv')) continue;
+
+            const arrayBuffer = await file.arrayBuffer();
+            const fileData = new Uint8Array(arrayBuffer);
+
+            // 文字コード判定
+            let binary = "";
+            const checkLength = Math.min(fileData.length, 10000);
+            for (let i = 0; i < checkLength; i++) {
+                binary += String.fromCharCode(fileData[i]);
+            }
+            const detected = jschardet.detect(binary);
+
+            // 配列に保存
+            filesArray.push({
+                name: file.name,
+                data: fileData,
+                encoding: detected.encoding || "不明"
+            });
+        }
+
+        // 画面のリストを更新
+        renderFileList();
+    }
+
+    // 3. ファイルリストの画面表示
+    function renderFileList() {
+        if (filesArray.length === 0) return;
+
+        fileListContainer.innerHTML = "";
+        filesArray.forEach(fileInfo => {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.innerHTML = `
+                <span class="file-name">${fileInfo.name}</span>
+                <span class="file-enc">${fileInfo.encoding}</span>
+            `;
+            fileListContainer.appendChild(item);
+        });
+
+        convertBox.style.display = 'block';
+    }
+
+    // 4. すべてのファイルを変換して保存する
+    async function saveAllFiles() {
+        if (filesArray.length === 0) return;
+        const targetEnc = document.getElementById('target-enc').value;
+
+        // ブラウザの仕様上、showSaveFilePickerをループで回すとセキュリティ警告や
+        // ユーザーの手間（何度もダイアログが出る）が増えるため、
+        // 複数ファイルの場合は「自動ダウンロード（従来のaタグ方式）」で一気に落とすのが快適です。
+        
+        for (let fileInfo of filesArray) {
+            // Encoding.jpで変換
+            const converted = Encoding.convert(fileInfo.data, { to: targetEnc, from: 'AUTO' });
+            const newUint8 = new Uint8Array(converted);
+
+            const blob = new Blob([newUint8], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            // ファイル名の先頭に識別用テキストをつける
+            a.download = `converted_${targetEnc}_${fileInfo.name}`;
+            document.body.appendChild(a);
+            a.click();
+            
+            // 少しだけ片付けを遅らせる
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+        }
+
+        alert(`${filesArray.length}個のファイルを ${targetEnc} に変換してダウンロードしました！`);
+    }
+
+    // イベントリスナー
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('hover'); });
+    dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('hover'); });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('hover');
+        loadFiles(e.dataTransfer.files); // 複数のファイルが渡される
+    });
+    dropZone.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = ".csv";
+        input.multiple = true; // 複数選択を許可
+        input.onchange = e => loadFiles(e.target.files);
+        input.click();
+    });
+</script>
+
+</body>
+</html>
